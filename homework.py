@@ -19,7 +19,7 @@ from exceptions import (
 load_dotenv()
 PRACTICUM_TOKEN = os.getenv('TOKEN_YP')
 TELEGRAM_TOKEN = os.getenv('TOKEN_BOT_TG')
-TELEGRAM_CHAT_ID = int(os.getenv('TG_CHAT_ID'))
+TELEGRAM_CHAT_ID = os.getenv('TG_CHAT_ID')
 
 RETRY_PERIOD = 600
 ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
