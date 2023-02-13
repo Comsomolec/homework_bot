@@ -37,21 +37,21 @@ DEBUG_SEND_MESSAGE = 'Сообщение успешно отправлено: {m
 ERROR_SEND_MESSAGE = (
     'Сбой при отправке сообщения в телеграм: {message}.{error}'
 )
-ENDPOINT_RESPONCE_ERROR = (
-    'Ошибка при отправке запрос на эндпоинт {endpoint}: {error}. '
+ENDPOINT_RESPONSE_ERROR = (
+    'Ошибка при отправке запрос на эндпоинт {url}: {error}. '
     'Параметры запроса: headers={headers}, params={params}'
 )
 ENDPOINT_REQUEST_CODE_ERROR = (
-    'Эндпоинт {endpoint} недоступен. Код ответа:{code}. '
+    'Эндпоинт {url} недоступен. Код ответа:{code}. '
     'Параметры запроса: headers={headers}, params={params}'
 )
 ENDPOINT_REQUEST_ERROR = (
-    'Эндпоинт {endpoint} недоступен. '
+    'Эндпоинт {url} недоступен. '
     'Код ответа:{code}. '
     'Ошибка: {error}. '
     'Параметры запроса: headers={headers}, params={params}'
 )
-RESPONCE_TYPE_ERROR = (
+RESPONSE_TYPE_ERROR = (
     'Ответ не соответствует типу данных. Вместо dict -> {type}'
 )
 KEY_HOMEWORKS_NOT_FOUND = 'В ответе API не найден ключ "homeworks"'
@@ -96,70 +96,48 @@ def send_message(bot, message):
 def get_api_answer(timestamp):
     """Отправляем запрос к endpoint API Yandex.Practicum."""
     payload = {'from_date': timestamp}
+    response_check = {'code': None, 'error': None}
+    request_parameters = dict(url=ENDPOINT, headers=HEADERS, params=payload)
     try:
-        response = requests.get(
-            ENDPOINT, headers=HEADERS, params=payload
-        )
+        response = requests.get(**request_parameters)
     except requests.exceptions.RequestException as error:
         raise ConnectionError(
-            ENDPOINT_RESPONCE_ERROR.format(
-                endpoint=ENDPOINT, error=error, headers=HEADERS, params=payload
-            )
+            ENDPOINT_RESPONSE_ERROR.format(error=error, **request_parameters)
         )
     if response.status_code != HTTPStatus.OK:
         raise ResponceError(
             ENDPOINT_REQUEST_CODE_ERROR.format(
-                endpoint=ENDPOINT, code=response.status_code,
-                headers=HEADERS, params=payload
+                code=response.status_code, **request_parameters
             )
         )
     response = response.json()
-    if 'code' in response:
-        code = response['code']
-    else:
-        code = None
-    if 'error' in response:
-        err = response['error']
-    else:
-        err = None
-    if (code is None) and (err is None):
-        return response
-    else:
+    for key in response_check:
+        if key in response:
+            response_check[key] = response[key]
+    if (response_check['code'] != None) and (response_check['error'] != None):
         raise ResponceError(
             ENDPOINT_REQUEST_ERROR.format(
-                endpoint=ENDPOINT, code=code, error=err,
-                headers=HEADERS, params=payload
+                code=response_check['code'], error=response_check['error'],
+                **request_parameters
             )
         )
+    return response
 
 
 def check_response(response):
     """Проверяем ответ от эндпоинт API на соответствие документации."""
     if not isinstance(response, dict):
-        raise TypeError(RESPONCE_TYPE_ERROR.format(type=type(response)))
+        raise TypeError(RESPONSE_TYPE_ERROR.format(type=type(response)))
     if 'homeworks' not in response:
         raise KeyError(KEY_HOMEWORKS_NOT_FOUND)
     homeworks = response['homeworks']
     if not isinstance(homeworks, list):
-        raise TypeError(RESPONCE_TYPE_ERROR.format(type=type(homeworks)))
+        raise TypeError(RESPONSE_TYPE_ERROR.format(type=type(homeworks)))
     return homeworks
 
 
 def parse_status(homework):
     """Проверка статуса проверки домашней работы."""
-    # keys_homework_dict = [
-    #     'id',
-    #     'status',
-    #     'homework_name',
-    #     'reviewer_comment',
-    #     'date_updated',
-    #     'lesson_name'
-    # ]
-    # for key in keys_homework_dict:
-    #     if key not in homework:
-    #         logger.error(f'В ответе API не найден ключ {key}.')
-    #         raise KeyError(f'В ответе API не найден ключ {key}.')
-    # Данная конструкция не проходит тесты ЯП. (?)
     if 'homework_name' not in homework:
         raise KeyError(
             KEY_IN_DICT_HOMEWORK_NOT_FOUND.format(key="homework_name")
