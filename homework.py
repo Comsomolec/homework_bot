@@ -1,6 +1,6 @@
 from http import HTTPStatus
-import logging
 from logging.handlers import RotatingFileHandler
+import logging
 import os
 import sys
 import time
@@ -12,7 +12,6 @@ import telegram
 from exceptions import (
     ResponceError,
     SendMessageError,
-    TokenError
 )
 
 load_dotenv()
@@ -29,49 +28,68 @@ HOMEWORK_VERDICTS = {
     'rejected': 'Работа проверена: у ревьюера есть замечания.'
 }
 TOKENS = ['PRACTICUM_TOKEN', 'TELEGRAM_TOKEN', 'TELEGRAM_CHAT_ID']
-VERDICT_PHRASE = (
+VERDICT = (
     'Изменился статус проверки работы "{homework_name}": "{status}". {verdict}'
 )
-logger = logging.getLogger(__name__)
-logging.basicConfig(
-    level=logging.DEBUG,
-    format=('%(asctime)s, %(levelname)s, %(message)s, '
-            'Функция: %(funcName)s, Строка: %(lineno)d'),
-    handlers=[
-        RotatingFileHandler(
-            __file__ + '.log',
-            maxBytes=50000000,
-            backupCount=5,
-            encoding='utf-8'
-        ),
-        logging.StreamHandler(sys.stdout)
-    ]
+TOKEN_ERROR = 'Токены {tokens} отсутствуют'
+TOKEN_VALID = 'Токены валидны'
+DEBUG_SEND_MESSAGE = 'Сообщение успешно отправлено: {message}'
+ERROR_SEND_MESSAGE = (
+    'Сбой при отправке сообщения в телеграм: {message}.{error}'
 )
+ENDPOINT_RESPONCE_ERROR = (
+    'Ошибка при отправке запрос на эндпоинт {endpoint}: {error}. '
+    'Параметры запроса: headers={headers}, params={params}'
+)
+ENDPOINT_REQUEST_CODE_ERROR = (
+    'Эндпоинт {endpoint} недоступен. Код ответа:{code}. '
+    'Параметры запроса: headers={headers}, params={params}'
+)
+ENDPOINT_REQUEST_ERROR = (
+    'Эндпоинт {endpoint} недоступен. '
+    'Код ответа:{code}. '
+    'Ошибка: {error}. '
+    'Параметры запроса: headers={headers}, params={params}'
+)
+RESPONCE_TYPE_ERROR = (
+    'Ответ не соответствует типу данных. Вместо dict -> {type}'
+)
+KEY_HOMEWORKS_NOT_FOUND = 'В ответе API не найден ключ "homeworks"'
+KEY_IN_DICT_HOMEWORK_NOT_FOUND = (
+    'Ключ {key} отсутствует в dict(homework)'
+)
+CHECK_STATUS_UNDEFINED = (
+    'Статус проверки домашней работы не определен -> {status}'
+)
+STATUS_DEBUG = 'Статус домашней работы не изменился.'
+HOMEWORK_NOT_SUBMITTED = 'Домашняя работа на проверку не отправлена.'
+EXCEPTION_MESSAGE = 'Сбой в работе программы: {error}'
+EXCEPTION_MESSAGE_NOT_SUBMITTED = (
+    'Сообщение в телеграм чат не отправлено. {error}'
+)
+logger = logging.getLogger(__name__)
 
 
 def check_tokens():
     """Проверяем доступность переменных окружения - Токенов."""
-    names = []
-    for name in TOKENS:
-        if globals()[name] is None:
-            names.append(name)
-            logger.critical(f'Токен {name} отсутствует.')
-    if names:
-        raise TokenError(f'Токены {",".join(names)} отсутствует.')
-    logger.info('Токены валидны.')
+    tokens = [name for name in TOKENS if globals()[name] is None]
+    if tokens:
+        logger.critical(TOKEN_ERROR.format(tokens=tokens))
+        raise ValueError(TOKEN_ERROR.format(tokens=tokens))
+    logger.info(TOKEN_VALID)
 
 
 def send_message(bot, message):
     """Отправляем сообщение в телеграмм."""
     try:
         bot.send_message(TELEGRAM_CHAT_ID, message)
-        logger.debug(f'Сообщение успешно отправлено: {message}')
+        logger.debug(DEBUG_SEND_MESSAGE.format(message=message))
     except telegram.TelegramError as error:
         logger.exception(
-            f'Сбой при отправке сообщения в телеграм: {message}.{error}'
+            ERROR_SEND_MESSAGE.format(message=message, error=error)
         )
         raise SendMessageError(
-            f'Сбой при отправке сообщения в телеграм: {message}.{error}'
+            ERROR_SEND_MESSAGE.format(message=message, error=error)
         )
 
 
@@ -83,36 +101,47 @@ def get_api_answer(timestamp):
             ENDPOINT, headers=HEADERS, params=payload
         )
     except requests.exceptions.RequestException as error:
-        raise Exception(
-            f'Ошибка при отправке запрос на эндпоинт: {error}. '
-            f'Параметры запроса: '
-            f'{ENDPOINT}, headers={HEADERS}, params={payload}'
+        raise ConnectionError(
+            ENDPOINT_RESPONCE_ERROR.format(
+                endpoint=ENDPOINT, error=error, headers=HEADERS, params=payload
+            )
         )
     if response.status_code != HTTPStatus.OK:
         raise ResponceError(
-            f'Эндпоинт {ENDPOINT} недоступен. '
-            f'Код ответа:{response.status_code}. '
-            f'Параметры запроса: '
-            f'{ENDPOINT}, headers={HEADERS}, params={payload}.'
+            ENDPOINT_REQUEST_CODE_ERROR.format(
+                endpoint=ENDPOINT, code=response.status_code,
+                headers=HEADERS, params=payload
+            )
         )
-    return response.json()
+    response = response.json()
+    if 'code' in response:
+        code = response['code']
+    else:
+        code = None
+    if 'error' in response:
+        err = response['error']
+    else:
+        err = None
+    if (code is None) and (err is None):
+        return response
+    else:
+        raise ResponceError(
+            ENDPOINT_REQUEST_ERROR.format(
+                endpoint=ENDPOINT, code=code, error=err,
+                headers=HEADERS, params=payload
+            )
+        )
 
 
 def check_response(response):
     """Проверяем ответ от эндпоинт API на соответствие документации."""
     if not isinstance(response, dict):
-        raise TypeError(
-            f'Ответ не соответствует типу данных. '
-            f'Вместо dict -> {type(response)}.'
-        )
+        raise TypeError(RESPONCE_TYPE_ERROR.format(type=type(response)))
     if 'homeworks' not in response:
-        raise KeyError('В ответе API не найден ключ "homeworks".')
+        raise KeyError(KEY_HOMEWORKS_NOT_FOUND)
     homeworks = response['homeworks']
     if not isinstance(homeworks, list):
-        raise TypeError(
-            f'Ответ не соответствует типу данных. '
-            f'Вместо list -> {type(response)}.'
-        )
+        raise TypeError(RESPONCE_TYPE_ERROR.format(type=type(homeworks)))
     return homeworks
 
 
@@ -132,17 +161,20 @@ def parse_status(homework):
     #         raise KeyError(f'В ответе API не найден ключ {key}.')
     # Данная конструкция не проходит тесты ЯП. (?)
     if 'homework_name' not in homework:
-        raise KeyError('Ключ "homework_name" отсутствует в dict(homework)')
+        raise KeyError(
+            KEY_IN_DICT_HOMEWORK_NOT_FOUND.format(key="homework_name")
+        )
     if 'status' not in homework:
-        raise KeyError('Ключ "status" отсутствует в dict(homework)')
+        raise KeyError(
+            KEY_IN_DICT_HOMEWORK_NOT_FOUND.format(key="status")
+        )
     status = homework['status']
     if status not in HOMEWORK_VERDICTS:
-        raise KeyError(
-            f'Статус проверки домашней работы не определен -> {status}'
-        )
-    verdict = HOMEWORK_VERDICTS[status]
-    return VERDICT_PHRASE.format(
-        homework_name=homework['homework_name'], status=status, verdict=verdict
+        raise ValueError(CHECK_STATUS_UNDEFINED.format(status=status))
+    return VERDICT.format(
+        homework_name=homework['homework_name'],
+        status=status,
+        verdict=HOMEWORK_VERDICTS[status]
     )
 
 
@@ -163,25 +195,39 @@ def main():
                     send_message(bot, message)
                     last_message = message
                 else:
-                    logger.debug('Статус домашней работы не изменился.')
+                    logger.debug(STATUS_DEBUG)
             else:
-                logger.warning('Домашняя работа на проверку не отправлена.')
+                logger.debug(HOMEWORK_NOT_SUBMITTED)
             timestamp = response['current_date']
         except Exception as error:
-            message = f'Сбой в работе программы: {error}'
+            message = EXCEPTION_MESSAGE.format(error=error)
             logger.error(message)
             if message != last_error_message:
                 try:
                     send_message(bot, message)
                     last_error_message = message
                 except Exception as error_message:
-                    logger.critical(
-                        f'Сообщение в телеграм чат не отправлено. '
-                        f'{error_message}'
-                    )
+                    logger.critical(EXCEPTION_MESSAGE_NOT_SUBMITTED.format(
+                        error=error_message
+                    ))
         finally:
             time.sleep(RETRY_PERIOD)
 
 
 if __name__ == '__main__':
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format=('%(asctime)s, %(levelname)s, Функция: %(funcName)s, '
+                'Строка: %(lineno)d, %(message)s.'),
+        handlers=[
+            RotatingFileHandler(
+                __file__ + '.log',
+                maxBytes=50000000,
+                backupCount=5,
+                encoding='utf-8'
+            ),
+            logging.StreamHandler(sys.stdout)
+        ]
+    )
+
     main()
