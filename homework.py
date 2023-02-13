@@ -114,7 +114,8 @@ def get_api_answer(timestamp):
     for key in response_check:
         if key in response:
             response_check[key] = response[key]
-    if (response_check['code'] != None) and (response_check['error'] != None):
+    if (response_check['code'] is not None) and (
+            response_check['error'] is not None):
         raise ResponceError(
             ENDPOINT_REQUEST_ERROR.format(
                 code=response_check['code'], error=response_check['error'],
