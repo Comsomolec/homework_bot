@@ -32,11 +32,11 @@ python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 * Записать необходимые ключи в переменные окружения (файл .env):
-
-- PRACTICUM_TOKEN - токен профиля на Яндекс.Практикуме
-- TELEGRAM_TOKEN - токен телеграм-бота
-- TELEGRAM_CHAT_ID - свой ID в телеграме
-
+```
+PRACTICUM_TOKEN - токен профиля на Яндекс.Практикуме
+TELEGRAM_TOKEN - токен телеграм-бота
+TELEGRAM_CHAT_ID - свой ID в телеграме
+```
 ## Запустить проект:
 
 python homework.py
